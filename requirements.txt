@@ -1,0 +1,50 @@
+# Core
+python-dotenv
+requests
+
+# Voice Processing
+SpeechRecognition
+pyttsx3
+
+gTTS
+
+# NLP / AI
+openai
+langchain
+langchain-community
+tiktoken
+
+# Vector Database (RAG)
+faiss-cpu
+chromadb
+
+# ML / Utilities
+numpy
+pandas
+scikit-learn
+
+# File Handling
+pypdf
+python-docx
+
+# Web & Automation
+selenium
+beautifulsoup4
+
+# UI (choose one or both)
+streamlit
+pyqt5
+
+# Async & APIs
+fastapi
+uvicorn
+
+# System / OS Utilities
+psutil
+
+# Optional (better speech models)
+whisper
+sounddevice
+
+# Logging & Dev
+loguru

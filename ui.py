@@ -1,0 +1,671 @@
+import streamlit as st
+from ai_brain import agent_decision, generate_system_command, chat_response
+from rag.retriever import get_relevant_docs
+from voice import take_voice_command
+import subprocess
+
+# ─────────────────────────────────────────
+#  PAGE CONFIG
+# ─────────────────────────────────────────
+st.set_page_config(
+    page_title="ARIA · AI Assistant",
+    page_icon="⬡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ─────────────────────────────────────────
+#  GLOBAL CSS
+# ─────────────────────────────────────────
+st.markdown("""
+<style>
+/* ── Fonts ─────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap');
+
+/* ── Reset & Base ───────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, [data-testid="stAppViewContainer"] {
+    background: #050b18 !important;
+    font-family: 'Syne', sans-serif;
+    color: #c8d6e5;
+}
+
+/* ── Animated mesh background ───────────── */
+[data-testid="stAppViewContainer"]::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(0, 210, 200, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 100% 80% at 50% 50%, rgba(5, 11, 24, 1) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ── Main content area ──────────────────── */
+[data-testid="stMain"] {
+    background: transparent !important;
+}
+
+.block-container {
+    padding: 1.5rem 2rem 2rem !important;
+    max-width: 960px !important;
+    margin: 0 auto;
+}
+
+/* ── Sidebar ────────────────────────────── */
+section[data-testid="stSidebar"] {
+    background: rgba(5, 11, 24, 0.97) !important;
+    border-right: 1px solid rgba(0, 210, 200, 0.12) !important;
+    backdrop-filter: blur(20px);
+}
+
+section[data-testid="stSidebar"] > div {
+    padding: 1.5rem 1rem;
+}
+
+/* ── Header ─────────────────────────────── */
+.aria-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 1.2rem 1.6rem;
+    background: rgba(0, 210, 200, 0.04);
+    border: 1px solid rgba(0, 210, 200, 0.15);
+    border-radius: 16px;
+    margin-bottom: 1.6rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.aria-header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 210, 200, 0.6), transparent);
+}
+
+.aria-logo {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, #00d2c8, #6366f1);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+    box-shadow: 0 0 20px rgba(0, 210, 200, 0.3);
+}
+
+.aria-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.5rem;
+    letter-spacing: 0.06em;
+    color: #e8f4f4;
+}
+
+.aria-subtitle {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    color: #00d2c8;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    opacity: 0.8;
+}
+
+.status-dot {
+    width: 8px; height: 8px;
+    background: #00d2c8;
+    border-radius: 50%;
+    margin-left: auto;
+    box-shadow: 0 0 8px #00d2c8;
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ── Sidebar Brand ──────────────────────── */
+.sidebar-brand {
+    text-align: center;
+    padding: 0.5rem 0 1.2rem;
+    border-bottom: 1px solid rgba(0, 210, 200, 0.1);
+    margin-bottom: 1.2rem;
+}
+
+.sidebar-brand h2 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.2rem;
+    letter-spacing: 0.1em;
+    color: #e8f4f4;
+    margin: 0 0 4px;
+}
+
+.sidebar-brand p {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem;
+    color: #00d2c8;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin: 0;
+    opacity: 0.75;
+}
+
+/* ── Section labels ─────────────────────── */
+.section-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(0, 210, 200, 0.6);
+    margin: 1.2rem 0 0.5rem;
+    padding-left: 2px;
+}
+
+/* ── Sidebar Quick Action Buttons ────────── */
+.stButton > button {
+    width: 100% !important;
+    background: rgba(0, 210, 200, 0.05) !important;
+    border: 1px solid rgba(0, 210, 200, 0.18) !important;
+    color: #c8d6e5 !important;
+    border-radius: 10px !important;
+    font-family: 'Syne', sans-serif !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    padding: 0.55rem 0.9rem !important;
+    text-align: left !important;
+    margin-bottom: 6px !important;
+    transition: all 0.2s ease !important;
+    letter-spacing: 0.01em !important;
+}
+
+.stButton > button:hover {
+    background: rgba(0, 210, 200, 0.12) !important;
+    border-color: rgba(0, 210, 200, 0.45) !important;
+    color: #00d2c8 !important;
+    box-shadow: 0 0 14px rgba(0, 210, 200, 0.1) !important;
+    transform: translateX(3px) !important;
+}
+
+/* ── Chat area ──────────────────────────── */
+.chat-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 1.5rem;
+}
+
+/* User bubble */
+.user-bubble {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 10px;
+    animation: slideInRight 0.3s ease;
+}
+
+.user-bubble .bubble-content {
+    background: linear-gradient(135deg, #0f4c75, #1a6b96);
+    color: #e8f4f4;
+    padding: 12px 16px;
+    border-radius: 18px 18px 4px 18px;
+    max-width: 72%;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    border: 1px solid rgba(0, 180, 220, 0.25);
+    box-shadow: 0 4px 20px rgba(0, 100, 180, 0.2);
+}
+
+.avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.user-avatar {
+    background: linear-gradient(135deg, #1a6b96, #0f4c75);
+    border: 1px solid rgba(0, 180, 220, 0.3);
+}
+
+/* Bot bubble */
+.bot-bubble {
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-end;
+    gap: 10px;
+    animation: slideInLeft 0.3s ease;
+}
+
+.bot-bubble .bubble-content {
+    background: rgba(15, 25, 45, 0.9);
+    color: #c8d6e5;
+    padding: 12px 16px;
+    border-radius: 18px 18px 18px 4px;
+    max-width: 78%;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    border: 1px solid rgba(0, 210, 200, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+.bot-avatar {
+    background: linear-gradient(135deg, #00d2c8, #6366f1);
+    border: 1px solid rgba(0, 210, 200, 0.4);
+    box-shadow: 0 0 10px rgba(0, 210, 200, 0.2);
+}
+
+@keyframes slideInRight {
+    from { opacity: 0; transform: translateX(16px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInLeft {
+    from { opacity: 0; transform: translateX(-16px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Command box ────────────────────────── */
+.cmd-box {
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(0, 210, 200, 0.3);
+    border-left: 3px solid #00d2c8;
+    color: #00d2c8;
+    padding: 12px 16px;
+    border-radius: 0 10px 10px 0;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    margin: 6px 0 10px 42px;
+    letter-spacing: 0.02em;
+    box-shadow: 0 0 20px rgba(0, 210, 200, 0.07);
+    position: relative;
+}
+
+.cmd-box::before {
+    content: '$ ';
+    opacity: 0.5;
+}
+
+/* ── Memory panel ───────────────────────── */
+.memory-panel {
+    background: rgba(0, 210, 200, 0.04);
+    border: 1px solid rgba(0, 210, 200, 0.12);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 8px;
+}
+
+.memory-item {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.68rem;
+    color: #8899aa;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.memory-item:last-child { border-bottom: none; }
+.memory-item .role-tag {
+    color: #00d2c8;
+    opacity: 0.7;
+    margin-right: 4px;
+    text-transform: uppercase;
+    font-size: 0.6rem;
+}
+
+/* ── Welcome banner ─────────────────────── */
+.welcome-banner {
+    text-align: center;
+    padding: 3.5rem 1rem;
+    color: #4a6080;
+}
+
+.welcome-banner .big-icon {
+    font-size: 3.5rem;
+    margin-bottom: 1rem;
+    display: block;
+    filter: drop-shadow(0 0 16px rgba(0, 210, 200, 0.25));
+}
+
+.welcome-banner h3 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    color: #8899aa;
+    margin: 0 0 8px;
+}
+
+.welcome-banner p {
+    font-size: 0.85rem;
+    color: #4a6080;
+    margin: 0;
+}
+
+/* ── Hint chips ─────────────────────────── */
+.hint-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 1.4rem;
+}
+
+.hint-chip {
+    background: rgba(0, 210, 200, 0.06);
+    border: 1px solid rgba(0, 210, 200, 0.2);
+    color: #6b8ca8;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-family: 'Syne', sans-serif;
+    cursor: default;
+}
+
+/* ── Divider ────────────────────────────── */
+.custom-divider {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 210, 200, 0.2), transparent);
+    margin: 0.8rem 0;
+}
+
+/* ── Chat input override ─────────────────── */
+[data-testid="stChatInput"] {
+    background: rgba(10, 20, 38, 0.95) !important;
+    border: 1px solid rgba(0, 210, 200, 0.2) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 0 24px rgba(0, 210, 200, 0.06) !important;
+}
+
+[data-testid="stChatInput"] textarea {
+    font-family: 'Syne', sans-serif !important;
+    font-size: 0.9rem !important;
+    color: #c8d6e5 !important;
+    background: transparent !important;
+}
+
+[data-testid="stChatInput"]:focus-within {
+    border-color: rgba(0, 210, 200, 0.45) !important;
+    box-shadow: 0 0 30px rgba(0, 210, 200, 0.1) !important;
+}
+
+/* ── Spinner ────────────────────────────── */
+[data-testid="stSpinner"] p {
+    font-family: 'Space Mono', monospace !important;
+    font-size: 0.78rem !important;
+    color: #00d2c8 !important;
+    letter-spacing: 0.08em;
+}
+
+/* ── Footer ─────────────────────────────── */
+.footer-bar {
+    text-align: center;
+    margin-top: 1.2rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid rgba(255,255,255,0.04);
+}
+
+.footer-bar span {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.62rem;
+    color: rgba(100,130,160,0.5);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+/* ── Scrollbar ──────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: rgba(0, 210, 200, 0.2);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 210, 200, 0.4); }
+
+/* ── Hide Streamlit chrome ──────────────── */
+#MainMenu, footer, header { visibility: hidden; }
+[data-testid="stDecoration"] { display: none; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────
+#  SIDEBAR
+# ─────────────────────────────────────────
+with st.sidebar:
+
+    # Brand
+    st.markdown("""
+    <div class="sidebar-brand">
+        <h2>⬡ ARIA</h2>
+        <p>Adaptive Reasoning Intelligence Agent</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Quick Actions
+    st.markdown('<p class="section-label">⚡ Quick Actions</p>', unsafe_allow_html=True)
+
+    quick_commands = [
+        ("🌐", "Open Chrome"),
+        ("🧮", "Open Calculator"),
+        ("📂", "Show files"),
+        ("📄", "Summarize any document"),
+        ("🔍", "Explain my project"),
+    ]
+
+    for icon, cmd in quick_commands:
+        if st.button(f"{icon}  {cmd}", key=f"qb_{cmd}"):
+            st.session_state["quick_input"] = cmd
+
+    # Divider
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    # Memory
+    st.markdown('<p class="section-label">🧠 Context Memory</p>', unsafe_allow_html=True)
+
+    mem_toggle = st.toggle("Show recent memory", value=False)
+
+    if mem_toggle and "messages" in st.session_state and st.session_state.messages:
+        recent = st.session_state.messages[-6:]
+        items_html = ""
+        for msg in recent:
+            role = msg["role"]
+            short = msg["content"][:60] + ("…" if len(msg["content"]) > 60 else "")
+            items_html += f'<div class="memory-item"><span class="role-tag">{role}</span>{short}</div>'
+        st.markdown(f'<div class="memory-panel">{items_html}</div>', unsafe_allow_html=True)
+    elif mem_toggle:
+        st.caption("No conversation history yet.")
+
+    # Divider
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    # Clear button
+    st.markdown('<p class="section-label">🗑 Session</p>', unsafe_allow_html=True)
+    if st.button("🔄  Clear Conversation", key="clear_btn"):
+        st.session_state.messages = []
+        st.rerun()
+
+    # Model info
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="padding: 8px 2px;">
+        <p class="section-label" style="margin-top:0">📡 Model Info</p>
+        <p style="font-family:'Space Mono',monospace; font-size:0.65rem; color:#4a6080; margin:3px 0;">
+            Engine · Mistral 7B<br>
+            Memory · RAG (CHROMA DB)<br>
+            Mode · Agentic
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────
+#  INIT STATE
+# ─────────────────────────────────────────
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "loading" not in st.session_state:
+    st.session_state.loading = False
+
+
+# ─────────────────────────────────────────
+#  HELPERS
+# ─────────────────────────────────────────
+def execute_command(cmd):
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    return result.stdout if result.stdout else result.stderr
+
+def is_safe(cmd):
+    blocked = ["rm", "del", "format", "shutdown", "mkfs", ":(){ :|:& };:"]
+    return not any(word in cmd.lower() for word in blocked)
+
+
+# ─────────────────────────────────────────
+#  HEADER
+# ─────────────────────────────────────────
+st.markdown("""
+<div class="aria-header">
+    <div class="aria-logo">⬡</div>
+    <div>
+        <div class="aria-title">ARIA</div>
+        <div class="aria-subtitle">Adaptive Reasoning Intelligence Agent</div>
+    </div>
+    <div class="status-dot" title="Online"></div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────
+#  INPUT ROW  (voice + text)
+# ─────────────────────────────────────────
+col_chat, col_voice = st.columns([10, 1])
+
+with col_chat:
+    text_input = st.chat_input("Ask anything, or give a system command…")
+
+with col_voice:
+    voice_btn = st.button("🎤", key="voice_btn", disabled=st.session_state.loading,
+                          help="Click to speak")
+
+
+# ─────────────────────────────────────────
+#  RESOLVE INPUT
+# ─────────────────────────────────────────
+user_input = ""
+
+if voice_btn:
+    st.session_state.loading = True
+    with st.spinner("🎤  Listening…"):
+        user_input = take_voice_command()
+    st.session_state.loading = False
+
+elif "quick_input" in st.session_state:
+    user_input = st.session_state.pop("quick_input")
+
+elif text_input:
+    user_input = text_input
+
+
+# ─────────────────────────────────────────
+#  CHAT HISTORY
+# ─────────────────────────────────────────
+if not st.session_state.messages:
+    st.markdown("""
+    <div class="welcome-banner">
+        <span class="big-icon">⬡</span>
+        <h3>Hello, I'm ARIA</h3>
+        <p>Your adaptive AI assistant — ask me anything, or control your system.</p>
+        <div class="hint-chips">
+            <span class="hint-chip">💬 Ask a question</span>
+            <span class="hint-chip">⚙️ Run a command</span>
+            <span class="hint-chip">📄 Summarize a doc</span>
+            <span class="hint-chip">🔍 Explain code</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+else:
+    st.markdown('<div class="chat-wrapper">', unsafe_allow_html=True)
+
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
+            st.markdown(f"""
+            <div class="user-bubble">
+                <div class="bubble-content">{msg['content']}</div>
+                <div class="avatar user-avatar">👤</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="bot-bubble">
+                <div class="avatar bot-avatar">⬡</div>
+                <div class="bubble-content">{msg['content']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────
+#  PROCESS INPUT
+# ─────────────────────────────────────────
+if user_input:
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    st.session_state.loading = True
+
+    # Decide intent
+    with st.spinner("⬡  Thinking…"):
+        decision = agent_decision(user_input)
+
+    if decision == "COMMAND":
+        cmd = generate_system_command(user_input)
+
+        st.markdown(f'<div class="cmd-box">{cmd}</div>', unsafe_allow_html=True)
+
+        if not is_safe(cmd):
+            response = "⚠️ **Command blocked** — this operation is restricted for safety reasons."
+        else:
+            with st.spinner("🚀  Executing…"):
+                output = execute_command(cmd)
+            response = f"✅ Command completed.\n\n```\n{output.strip()}\n```"
+
+    elif decision == "QUESTION":
+        docs = get_relevant_docs(user_input)
+        context = "\n".join([doc.page_content for doc in docs])
+        with st.spinner("📚  Searching knowledge base…"):
+            response = chat_response(
+                context + "\n\nQuestion: " + user_input,
+                st.session_state.messages
+            )
+
+    else:
+        with st.spinner("⬡  Generating response…"):
+            response = chat_response(user_input, st.session_state.messages)
+
+    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.loading = False
+    st.rerun()
+
+
+# ─────────────────────────────────────────
+#  FOOTER
+# ─────────────────────────────────────────
+st.markdown("""
+<div class="footer-bar">
+    <span>ARIA · Mistral 7B + FAISS RAG + Streamlit · Local Intelligence</span>
+</div>
+""", unsafe_allow_html=True)
