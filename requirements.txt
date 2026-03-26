@@ -50,3 +50,4 @@ sounddevice
 loguru
 altair<5
 standard-imghdr
+langchain_huggingface
