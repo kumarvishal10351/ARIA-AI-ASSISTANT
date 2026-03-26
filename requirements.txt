@@ -49,3 +49,4 @@ sounddevice
 # Logging & Dev
 loguru
 altair<5
+standard-imghdr
