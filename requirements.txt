@@ -48,3 +48,4 @@ sounddevice
 
 # Logging & Dev
 loguru
+altair<5
